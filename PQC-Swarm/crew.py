@@ -46,21 +46,21 @@ def _task_output_text(task) -> str:
     return ""
 
 
-def _crew_task_output_text(crew_result, task_index: int) -> str:
-    """Fallback: extract output from CrewOutput.tasks_output."""
+def _crew_output_text(crew_result, index: int) -> str:
+    """Extract a task result from CrewOutput.tasks_output."""
     if crew_result is None:
         return ""
 
-    tasks_output = getattr(crew_result, "tasks_output", None)
+    outputs = getattr(crew_result, "tasks_output", None)
 
-    if not tasks_output:
+    if not outputs:
         return ""
 
     try:
-        if len(tasks_output) <= task_index:
+        if index >= len(outputs):
             return ""
 
-        output = tasks_output[task_index]
+        output = outputs[index]
 
         raw = getattr(output, "raw", None)
 
@@ -78,6 +78,144 @@ def _crew_task_output_text(crew_result, task_index: int) -> str:
         pass
 
     return ""
+
+
+def _direct_verification(
+    llm,
+    audit: str,
+    refactored: str,
+    language: str,
+) -> str:
+    """
+    Fallback verifier.
+
+    If CrewAI's third task does not expose a readable output,
+    send the completed audit + refactored code directly to the
+    configured LLM for verification.
+    """
+
+    verification_prompt = f"""
+You are the final Code Verification & Readiness Analyst for PQC-Swarm.
+
+Strictly verify the COMPLETE refactored {language} code below.
+
+You MUST inspect the code itself. Do not merely trust the Refactorer.
+
+AUDIT REPORT:
+----------------
+{audit}
+----------------
+
+REFACTORED CODE:
+----------------
+{refactored}
+----------------
+
+Verification requirements:
+
+1. Check Python syntax and code completeness.
+
+2. Check every import and referenced function.
+
+3. Verify pqcrypto APIs against the specified Python pqcrypto dependency.
+
+IMPORTANT:
+For Python pqcrypto, the expected ML-KEM KEM API is:
+- keygen()
+- encaps()
+- decaps()
+
+Do NOT claim that encaps() or decaps() are invalid merely because
+another cryptographic library uses names such as encapsulate()
+or decapsulate().
+
+4. Check ML-KEM key generation, encapsulation and decapsulation.
+
+5. Check ML-DSA key generation, signing and verification.
+
+6. Check AES-256-GCM key length, nonce handling, encryption
+and decryption.
+
+7. Check that the externally supplied session_key is actually
+encrypted and recovered.
+
+8. Check that RSA, ECC, ECDH, DH, DSA and SHA-1 have been removed
+from the refactored code.
+
+9. Check NIST terminology:
+- ML-KEM = FIPS 203
+- ML-DSA = FIPS 204
+- SLH-DSA = FIPS 205
+
+10. ML-DSA-65 is a valid FIPS 204 parameter set.
+Do NOT mark ml_dsa_65 as non-compliant merely because it is
+the 65 parameter set.
+
+11. Check that signature verification functionality exists.
+
+12. Check key management and serialization considerations.
+
+13. Check error handling and input validation.
+
+14. Do not invent alternative pqcrypto API names.
+
+15. Distinguish actual code defects from production-readiness
+warnings.
+
+Your response MUST begin with exactly ONE of:
+
+VERDICT: PASS
+
+VERDICT: PASS WITH WARNINGS
+
+VERDICT: FAIL
+
+Then provide:
+
+- Verification checklist
+- Issues found
+- Suggested fixes
+- Readiness summary
+
+Always return a complete non-empty verification report.
+"""
+
+
+    try:
+        response = llm.call(
+            [
+                {
+                    "role": "system",
+                    "content": (
+                        "You are a strict post-quantum cryptography "
+                        "code verifier. Return only a useful verification "
+                        "report and never return an empty response."
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": verification_prompt,
+                },
+            ]
+        )
+
+        if response is None:
+            return ""
+
+        text = str(response).strip()
+
+        # Remove accidental CrewAI-style wrapper if present.
+        if "Final Answer:" in text:
+            text = text.split("Final Answer:", 1)[1].strip()
+
+        return text
+
+    except Exception as exc:
+        return (
+            "VERDICT: FAIL\n\n"
+            "## Verification Error\n\n"
+            f"The fallback verifier could not complete verification: {exc}"
+        )
 
 
 def run_swarm(
@@ -150,7 +288,7 @@ def run_swarm(
         )
 
     # ---------------------------------------------------------
-    # Create sequential crew
+    # Run CrewAI
     # ---------------------------------------------------------
 
     crew = Crew(
@@ -168,14 +306,10 @@ def run_swarm(
         verbose=False,
     )
 
-    # ---------------------------------------------------------
-    # Run swarm
-    # ---------------------------------------------------------
-
     crew_result = crew.kickoff()
 
     # ---------------------------------------------------------
-    # Extract individual task outputs
+    # Extract results
     # ---------------------------------------------------------
 
     audit_output = _task_output_text(t_audit)
@@ -184,44 +318,52 @@ def run_swarm(
 
     verification_output = _task_output_text(t_verify)
 
-    # ---------------------------------------------------------
-    # Fallback to CrewOutput.tasks_output
-    # ---------------------------------------------------------
-
+    # CrewOutput fallback
     if not audit_output:
-        audit_output = _crew_task_output_text(
+        audit_output = _crew_output_text(
             crew_result,
             0,
         )
 
     if not refactor_output:
-        refactor_output = _crew_task_output_text(
+        refactor_output = _crew_output_text(
             crew_result,
             1,
         )
 
     if not verification_output:
-        verification_output = _crew_task_output_text(
+        verification_output = _crew_output_text(
             crew_result,
             2,
         )
 
     # ---------------------------------------------------------
-    # Final verification fallback
+    # IMPORTANT:
+    # If CrewAI's Verifier task is empty, directly run the
+    # verification through the same configured Groq LLM.
+    # ---------------------------------------------------------
+
+    if not verification_output:
+        verification_output = _direct_verification(
+            llm=llm,
+            audit=audit_output,
+            refactored=refactor_output,
+            language=language,
+        )
+
+    # ---------------------------------------------------------
+    # Final safety fallback
     # ---------------------------------------------------------
 
     if not verification_output:
         verification_output = (
             "VERDICT: FAIL\n\n"
             "## Verification Error\n\n"
-            "The Verifier agent did not return a readable "
-            "verification report. The refactored code must not "
-            "be considered verified or production-ready until "
-            "the Verifier returns a non-empty report."
+            "The Verifier could not return a readable report."
         )
 
     # ---------------------------------------------------------
-    # Return results
+    # Return final swarm result
     # ---------------------------------------------------------
 
     return SwarmResult(
