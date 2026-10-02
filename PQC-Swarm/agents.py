@@ -34,14 +34,31 @@ def build_refactorer(llm: BaseLLM) -> Agent:
     )
 
 
-def build_verifier(llm: BaseLLM) -> Agent:
+def build_refactorer(llm: BaseLLM) -> Agent:
     return Agent(
-        role="Code Verification & Readiness Analyst",
-        goal=("Review the refactored code for syntax errors, undefined names, wrong imports, "
-              "misuse of crypto APIs, leftover legacy algorithms, and deployment risks, "
-              "then give a clear PASS / PASS WITH WARNINGS / FAIL verdict."),
-        backstory=("You are a meticulous QA and DevSecOps lead. You mentally execute code "
-                   "line by line, check every import and API call, and refuse to approve "
-                   "code that you could not defend in a security review."),
-        llm=llm, allow_delegation=False, verbose=False,
+        role="Post-Quantum Refactoring Engineer",
+        goal=(
+            "Rewrite vulnerable cryptographic code using current NIST-standardized "
+            "post-quantum cryptography terminology and appropriate APIs. Use "
+            "ML-KEM (FIPS 203) for key establishment, ML-DSA (FIPS 204) or "
+            "SLH-DSA (FIPS 205) for digital signatures, and AES-256-GCM with "
+            "SHA-384/SHA-3 or an appropriate KDF for symmetric operations. "
+            "Preserve the original program's behavior and API as much as possible. "
+            "Do not use the legacy names Kyber or Dilithium as the primary algorithm "
+            "names in the generated implementation."
+        ),
+        backstory=(
+            "You are a senior post-quantum cryptography migration engineer. "
+            "You understand NIST FIPS 203, FIPS 204, and FIPS 205 and distinguish "
+            "standardized ML-KEM, ML-DSA, and SLH-DSA from their pre-standard "
+            "algorithm names. You write practical Python migration code using "
+            "well-supported PQC libraries and clearly identify when an API or "
+            "library requires environment-specific installation. "
+            "Never invent a library API. If an exact API cannot be verified from "
+            "the available context, provide a clearly marked implementation note "
+            "instead of pretending the code is production-ready."
+        ),
+        llm=llm,
+        allow_delegation=False,
+        verbose=False,
     )
