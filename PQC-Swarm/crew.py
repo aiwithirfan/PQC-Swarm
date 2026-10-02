@@ -8,7 +8,11 @@ from crewai import Crew, Process
 
 from agents import build_auditor, build_refactorer, build_verifier
 from llm import DEFAULT_MODEL, GroqChatLLM
-from tasks import build_audit_task, build_refactor_task, build_verify_task
+from tasks import (
+    build_audit_task,
+    build_refactor_task,
+    build_verify_task,
+)
 
 
 @dataclass
@@ -18,35 +22,133 @@ class SwarmResult:
     verification: str
 
 
-def run_swarm(code: str, api_key: str, model: str = DEFAULT_MODEL,
-              language: str = "Python", llm=None,
-              on_step: Optional[Callable[[str], None]] = None) -> SwarmResult:
-    """Run auditor -> refactorer -> verifier sequentially and return all outputs."""
+def _task_output_text(task) -> str:
+    """Safely extract text from a CrewAI Task output."""
+    output = getattr(task, "output", None)
+
+    if output is None:
+        return ""
+
+    # Normal CrewAI TaskOutput
+    raw = getattr(output, "raw", None)
+
+    if raw is not None:
+        text = str(raw).strip()
+        if text:
+            return text
+
+    # Fallback: string representation
+    try:
+        text = str(output).strip()
+        if text and text.lower() not in {"none", "null"}:
+            return text
+    except Exception:
+        pass
+
+    return ""
+
+
+def run_swarm(
+    code: str,
+    api_key: str,
+    model: str = DEFAULT_MODEL,
+    language: str = "Python",
+    llm=None,
+    on_step: Optional[Callable[[str], None]] = None,
+) -> SwarmResult:
+
     if not code or not code.strip():
         raise ValueError("No code provided.")
+
     if llm is None:
         if not api_key or not api_key.strip():
             raise ValueError("A Groq API key is required.")
-        llm = GroqChatLLM(api_key=api_key.strip(), model=model)
 
-    auditor, refactorer, verifier = build_auditor(llm), build_refactorer(llm), build_verifier(llm)
-    t_audit = build_audit_task(auditor, code, language)
-    t_refactor = build_refactor_task(refactorer, [t_audit], code, language)
-    t_verify = build_verify_task(verifier, [t_audit, t_refactor], language)
+        llm = GroqChatLLM(
+            api_key=api_key.strip(),
+            model=model,
+        )
 
-    steps = {id(t_audit): "Auditor finished", id(t_refactor): "Refactorer finished",
-             id(t_verify): "Verifier finished"}
+    # ------------------------------------------------------------------
+    # Agents
+    # ------------------------------------------------------------------
+    auditor = build_auditor(llm)
+    refactorer = build_refactorer(llm)
+    verifier = build_verifier(llm)
+
+    # ------------------------------------------------------------------
+    # Tasks
+    # ------------------------------------------------------------------
+    t_audit = build_audit_task(
+        auditor,
+        code,
+        language,
+    )
+
+    t_refactor = build_refactor_task(
+        refactorer,
+        [t_audit],
+        code,
+        language,
+    )
+
+    t_verify = build_verify_task(
+        verifier,
+        [t_audit, t_refactor],
+        language,
+    )
+
+    # ------------------------------------------------------------------
+    # Progress callbacks
+    # ------------------------------------------------------------------
     if on_step:
-        for t in (t_audit, t_refactor, t_verify):
-            t.callback = (lambda _o, msg=steps[id(t)]: on_step(msg))
+        t_audit.callback = lambda _output: on_step("Auditor finished")
+        t_refactor.callback = lambda _output: on_step("Refactorer finished")
+        t_verify.callback = lambda _output: on_step("Verifier finished")
 
-    crew = Crew(agents=[auditor, refactorer, verifier],
-                tasks=[t_audit, t_refactor, t_verify],
-                process=Process.sequential, verbose=False)
+    # ------------------------------------------------------------------
+    # Sequential Crew
+    # ------------------------------------------------------------------
+    crew = Crew(
+        agents=[
+            auditor,
+            refactorer,
+            verifier,
+        ],
+        tasks=[
+            t_audit,
+            t_refactor,
+            t_verify,
+        ],
+        process=Process.sequential,
+        verbose=False,
+    )
+
+    # Run all three agents
     crew.kickoff()
 
+    # ------------------------------------------------------------------
+    # Safely collect outputs
+    # ------------------------------------------------------------------
+    audit_output = _task_output_text(t_audit)
+    refactor_output = _task_output_text(t_refactor)
+    verification_output = _task_output_text(t_verify)
+
+    # ------------------------------------------------------------------
+    # Defensive verifier check
+    # ------------------------------------------------------------------
+    if not verification_output:
+        verification_output = (
+            "VERDICT: FAIL\n\n"
+            "## Verification Error\n\n"
+            "The Verifier agent completed without returning a readable "
+            "verification report. The refactored code must not be considered "
+            "verified or production-ready until the Verifier returns a "
+            "non-empty report."
+        )
+
     return SwarmResult(
-        audit=(t_audit.output.raw if t_audit.output else ""),
-        refactored=(t_refactor.output.raw if t_refactor.output else ""),
-        verification=(t_verify.output.raw if t_verify.output else ""),
+        audit=audit_output,
+        refactored=refactor_output,
+        verification=verification_output,
     )
