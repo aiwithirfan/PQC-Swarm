@@ -13,9 +13,9 @@ from crewai import BaseLLM
 from langchain_groq import ChatGroq
 from pydantic import PrivateAttr
 
-DEFAULT_MODEL = "llama-3.1-70b-versatile"
+DEFAULT_MODEL = "llama-3.1-8b-instant"
 AVAILABLE_MODELS = [
-    "llama-3.1-70b-versatile",
+    "llama-3.1-8b-instant",
     "llama-3.1-8b-instant",
     "openai/gpt-oss-120b",
 ]
