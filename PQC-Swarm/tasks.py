@@ -110,27 +110,43 @@ def build_verify_task(
 
             "Verification requirements:\n"
             "1. Check Python syntax and code completeness.\n"
+
             "2. Check every import and referenced function.\n"
-            "3. Verify that the pqcrypto APIs used are consistent with "
-            "the specified dependency.\n"
+
+            "3. Verify pqcrypto APIs against the specified dependency.\n"
+            "For pqcrypto Python, the KEM API uses keygen(), encaps(), and decaps().\n"
+            "Do NOT claim that encaps() or decaps() are invalid merely because "
+            "another library uses encapsulate() or decapsulate().\n"
+
             "4. Check ML-KEM key generation, encapsulation and decapsulation.\n"
+
             "5. Check ML-DSA key generation, signing and verification.\n"
+
             "6. Check AES-256-GCM key length, nonce handling, encryption "
             "and decryption.\n"
+
             "7. Check that an externally supplied session_key is actually "
             "encrypted and recovered, rather than being silently ignored.\n"
+
             "8. Check that RSA, ECC, ECDH, DH, DSA and SHA-1 have been removed.\n"
+
             "9. Check NIST terminology: ML-KEM FIPS 203, ML-DSA FIPS 204, "
             "SLH-DSA FIPS 205.\n"
+
             "10. ML-DSA-65 is a valid FIPS 204 parameter set. Do NOT report "
             "`ml_dsa_65` as non-compliant merely because it is the 65 parameter set.\n"
+
             "11. Check for missing signature verification functionality.\n"
+
             "12. Check key management and serialization requirements.\n"
+
             "13. Check error handling and input validation.\n"
-            "14. Do not assume an AI-generated API is valid merely because "
-            "the code looks syntactically correct.\n"
-            "15. If an external package/API requires confirmation, mark it "
-            "as a warning instead of silently approving it.\n\n"
+
+            "14. Do not invent alternative API names. For pqcrypto Python, "
+            "treat keygen(), encaps(), and decaps() as the expected KEM API.\n"
+
+            "15. Only flag a pqcrypto API if it conflicts with the specified "
+            "pqcrypto dependency or is otherwise inconsistent with the code.\n\n"
 
             "Your response MUST begin with exactly ONE of these lines:\n"
             "VERDICT: PASS\n"
