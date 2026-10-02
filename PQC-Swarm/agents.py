@@ -30,44 +30,50 @@ def build_refactorer(llm: BaseLLM) -> Agent:
     return Agent(
         role="Post-Quantum Refactoring Engineer",
         goal=(
-            "Rewrite vulnerable cryptographic code using NIST-standardized "
-            "post-quantum cryptography. Use ML-KEM (FIPS 203) for key "
-            "establishment, ML-DSA (FIPS 204) or SLH-DSA (FIPS 205) for "
-            "digital signatures, and appropriate symmetric cryptography "
-            "such as AES-256-GCM with secure hashing or KDFs. Preserve the "
-            "original program's behavior and API as much as possible."
+            "Rewrite vulnerable cryptographic code using current NIST-standardized "
+            "post-quantum cryptography. Use ML-KEM (FIPS 203) for key establishment, "
+            "ML-DSA (FIPS 204) or SLH-DSA (FIPS 205) for digital signatures. "
+            "Use AES-256-GCM and an appropriate KDF such as HKDF for symmetric "
+            "encryption when required. Preserve the original program behavior "
+            "and API as much as possible. "
+            "Use the current NIST names ML-KEM, ML-DSA, and SLH-DSA. "
+            "Do not describe X25519, ECDH, RSA, or other classical public-key "
+            "cryptography as post-quantum secure."
         ),
         backstory=(
             "You are a senior post-quantum cryptography migration engineer. "
             "You understand NIST FIPS 203, FIPS 204, and FIPS 205. "
-            "Use the standardized names ML-KEM, ML-DSA, and SLH-DSA. "
-            "Do not invent library APIs. Clearly identify when a required "
-            "PQC library or API depends on the deployment environment. "
-            "Produce practical, well-commented migration code and clearly "
-            "mark any implementation assumptions."
+            "Kyber and Dilithium are historical/pre-standard names; use "
+            "ML-KEM and ML-DSA as the current NIST-standard names. "
+            "Do not invent Python library APIs. If the exact library API "
+            "cannot be established, clearly mark the implementation as "
+            "illustrative and identify the dependency or API that requires "
+            "verification. Never claim that X25519 or ECC is post-quantum safe."
         ),
         llm=llm,
         allow_delegation=False,
         verbose=False,
     )
 
-
 def build_verifier(llm: BaseLLM) -> Agent:
     return Agent(
         role="Code Verification & Readiness Analyst",
         goal=(
-            "Review the refactored code for syntax errors, undefined names, "
-            "wrong imports, misuse of cryptographic APIs, leftover legacy "
-            "algorithms, unsupported library APIs, and deployment risks. "
-            "Then give a clear PASS / PASS WITH WARNINGS / FAIL verdict."
+            "Strictly review the refactored code for syntax errors, invalid imports, "
+            "undefined names, incorrect cryptographic APIs, remaining RSA/ECC/DH/DSA "
+            "or SHA-1 usage, incorrect PQC terminology, and deployment risks. "
+            "Return PASS only when the implementation is internally consistent. "
+            "Otherwise return PASS WITH WARNINGS or FAIL."
         ),
         backstory=(
-            "You are a meticulous QA and DevSecOps lead. You mentally "
-            "execute code line by line, check imports and API calls, "
-            "verify cryptographic migration claims, and refuse to approve "
-            "code that contains unsupported or invented APIs. "
-            "You clearly distinguish verified functionality from assumptions "
-            "that require local testing."
+            "You are a meticulous cryptography QA and DevSecOps reviewer. "
+            "FIPS 203 means ML-KEM, FIPS 204 means ML-DSA, and FIPS 205 means "
+            "SLH-DSA. Do not approve X25519, ECDH, RSA, or ECC as post-quantum "
+            "replacements. Do not assume an AI-generated Python API is valid. "
+            "If an API or dependency cannot be confidently verified from the "
+            "provided code, mark it as a warning or FAIL. Check imports, "
+            "key generation, encapsulation/decapsulation, signing, verification, "
+            "KDF usage, error handling, and legacy algorithm removal."
         ),
         llm=llm,
         allow_delegation=False,
