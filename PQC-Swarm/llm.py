@@ -14,10 +14,10 @@ from pydantic import PrivateAttr
 
 
 # Keep the default model inside AVAILABLE_MODELS.
-DEFAULT_MODEL = "llama-3.1-8b-instant"
+DEFAULT_MODEL = "openai/gpt-oss-20b"
 
 AVAILABLE_MODELS = [
-    "llama-3.1-8b-instant",
+    "openai/gpt-oss-20b",
     "openai/gpt-oss-120b",
 ]
 
