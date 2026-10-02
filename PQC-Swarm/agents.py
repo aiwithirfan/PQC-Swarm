@@ -35,35 +35,36 @@ def build_auditor(llm: BaseLLM) -> Agent:
     )
 
 
-def build_refactorer(llm: BaseLLM) -> Agent:
-    return Agent(
-        role="Post-Quantum Refactoring Engineer",
-        goal=(
-            "Rewrite the supplied vulnerable code using current NIST-standardized "
-            "post-quantum cryptography. Use ML-KEM (FIPS 203) for key establishment "
-            "and ML-DSA (FIPS 204) or SLH-DSA (FIPS 205) for digital signatures. "
-            "Preserve the original functionality as closely as possible. "
-            "Return a COMPLETE, syntactically valid implementation. "
-            "Never stop in the middle of a function, class, comment, or code block."
+def build_refactor_task(agent: Agent, context_tasks: list[Task], code: str, language: str) -> Task:
+    return Task(
+        description=(
+            f"Using the audit report, rewrite the original {language} code so every "
+            "quantum-vulnerable primitive is replaced with a NIST-standardized "
+            "post-quantum alternative.\n\n"
+            f"Original code:\n```\n{code}\n```\n\n"
+            "IMPORTANT IMPLEMENTATION RULES:\n"
+            "1. Use the Python package `pqcrypto` for post-quantum cryptography.\n"
+            "2. Use `pqcrypto.kem.ml_kem_768` for ML-KEM (NIST FIPS 203).\n"
+            "3. Use `pqcrypto.sign.ml_dsa_65` for ML-DSA (NIST FIPS 204).\n"
+            "4. Do NOT invent packages such as `mlkem` or `ml_dsa`.\n"
+            "5. Do NOT invent functions such as `generate_keypair()`, "
+            "`encapsulate()`, or `decapsulate()`.\n"
+            "6. Use the actual documented pqcrypto API such as `keygen()`, "
+            "`encaps()`, `decaps()`, `sign()`, and `verify()` where applicable.\n"
+            "7. Keep the original function names and behavior where possible.\n"
+            "8. Add short comments explaining each cryptographic migration.\n"
+            "9. Put `pqcrypto==1.0.0` in a pip-install comment at the top.\n"
+            "10. Return ONE complete Python code block. Never leave a function, "
+            "string, parenthesis, or code block incomplete.\n"
+            "11. After the code block, provide a short bullet list of changes."
         ),
-        backstory=(
-            "You are a senior post-quantum cryptography migration engineer. "
-            "You understand NIST FIPS 203, FIPS 204, and FIPS 205. "
-            "Always use the current names ML-KEM, ML-DSA, and SLH-DSA. "
-            "Do not describe RSA, ECC, ECDH, X25519, DH, or DSA as post-quantum safe. "
-            "Do not invent or guess Python package APIs. If the exact API of a "
-            "library cannot be established from the supplied context, clearly "
-            "label the implementation as illustrative rather than claiming it "
-            "is production-ready. "
-            "Before finishing, check that every function has a complete body, "
-            "all parentheses and strings are closed, all imports are present, "
-            "and the entire code block is complete."
+        expected_output=(
+            "A single complete Python code block using documented pqcrypto APIs, "
+            "followed by a brief change summary."
         ),
-        llm=llm,
-        allow_delegation=False,
-        verbose=False,
+        agent=agent,
+        context=context_tasks,
     )
-
 def build_verifier(llm: BaseLLM) -> Agent:
     return Agent(
         role="Code Verification & Readiness Analyst",
