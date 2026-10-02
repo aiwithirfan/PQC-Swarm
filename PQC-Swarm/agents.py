@@ -69,38 +69,51 @@ def build_refactorer(llm: BaseLLM) -> Agent:
         verbose=False,
     )
 
+def build_verify_task(agent: Agent, context_tasks: list[Task], language: str) -> Task:
+    return Task(
+        description=(
+            f"Strictly verify the COMPLETE refactored {language} code from the "
+            "previous Refactorer task.\n\n"
 
-def build_verifier(llm: BaseLLM) -> Agent:
-    return Agent(
-        role="Code Verification & Readiness Analyst",
-        goal=(
-            "Strictly verify the complete refactored code for syntax errors, "
-            "undefined names, invalid imports, incorrect cryptographic APIs, "
-            "incomplete functions, remaining RSA/ECC/DH/DSA/SHA-1 usage, "
-            "incorrect NIST terminology, and security design problems. "
-            "Return PASS only when the supplied implementation is internally "
-            "consistent and its cryptographic APIs are clearly supported by "
-            "the stated dependency. Return PASS WITH WARNINGS when the code "
-            "is structurally correct but an external dependency or API requires "
-            "verification. Return FAIL when the code is incomplete, syntactically "
-            "invalid, uses unsupported APIs as if they were confirmed, or "
-            "contains a serious cryptographic error."
+            "You MUST inspect both the audit report and the complete refactored "
+            "code before giving your verdict.\n\n"
+
+            "Verification requirements:\n"
+            "1. Check Python syntax and completeness.\n"
+            "2. Check every import and referenced function.\n"
+            "3. Verify that all pqcrypto APIs used are consistent with the "
+            "specified dependency.\n"
+            "4. Check ML-KEM usage: key generation, encapsulation and decapsulation.\n"
+            "5. Check ML-DSA usage: key generation, signing and verification.\n"
+            "6. Check AES-GCM key length, nonce handling and ciphertext handling.\n"
+            "7. Check that RSA, ECC, ECDH, DH, DSA and SHA-1 are removed.\n"
+            "8. Check NIST terminology: ML-KEM FIPS 203, ML-DSA FIPS 204, "
+            "SLH-DSA FIPS 205.\n"
+            "9. Check for missing signature verification functionality.\n"
+            "10. Check key management, serialization and error handling.\n"
+            "11. Do not assume an AI-generated API is valid merely because "
+            "the code looks syntactically correct.\n"
+            "12. If an external package/API requires confirmation, mark it "
+            "as a warning instead of silently approving it.\n\n"
+
+            "Your response MUST begin with exactly one of these lines:\n"
+            "VERDICT: PASS\n"
+            "VERDICT: PASS WITH WARNINGS\n"
+            "VERDICT: FAIL\n\n"
+
+            "After the verdict, provide:\n"
+            "- Verification checklist\n"
+            "- Issues found\n"
+            "- Required fixes\n"
+            "- Readiness summary\n\n"
+
+            "IMPORTANT: Always return a non-empty verification report. "
+            "Never return an empty response."
         ),
-        backstory=(
-            "You are a meticulous cryptography QA and DevSecOps reviewer. "
-            "NIST FIPS 203 is ML-KEM, FIPS 204 is ML-DSA, and FIPS 205 is SLH-DSA. "
-            "Never approve RSA, ECC, ECDH, X25519, DH, or DSA as post-quantum "
-            "replacements. Never assume that an AI-generated Python API exists. "
-            "Check every import, function, method, parameter, return value, "
-            "key-generation operation, encapsulation/decapsulation operation, "
-            "signature operation, verification operation, KDF, AES-GCM usage, "
-            "error handling, and serialization requirement. "
-            "If an API cannot be established from the supplied code and dependency, "
-            "explicitly mark it as requiring external verification. "
-            "Do not claim that code is production-ready merely because it looks "
-            "syntactically correct."
+        expected_output=(
+            "A non-empty Markdown verification report beginning with exactly "
+            "'VERDICT: PASS', 'VERDICT: PASS WITH WARNINGS', or 'VERDICT: FAIL'."
         ),
-        llm=llm,
-        allow_delegation=False,
-        verbose=False,
+        agent=agent,
+        context=context_tasks,
     )
