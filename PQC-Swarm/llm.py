@@ -13,7 +13,7 @@ from crewai import BaseLLM
 from langchain_groq import ChatGroq
 from pydantic import PrivateAttr
 
-DEFAULT_MODEL = "llama-3.1-8b-instant"
+DEFAULT_MODEL = "llama-3.3-70b-versatile"
 AVAILABLE_MODELS = [
     "llama-3.1-8b-instant",
     "llama-3.1-8b-instant",
