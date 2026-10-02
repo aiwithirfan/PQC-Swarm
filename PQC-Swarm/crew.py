@@ -29,7 +29,6 @@ def _task_output_text(task) -> str:
     if output is None:
         return ""
 
-    # Normal CrewAI TaskOutput
     raw = getattr(output, "raw", None)
 
     if raw is not None:
@@ -37,11 +36,44 @@ def _task_output_text(task) -> str:
         if text:
             return text
 
-    # Fallback: string representation
     try:
         text = str(output).strip()
         if text and text.lower() not in {"none", "null"}:
             return text
+    except Exception:
+        pass
+
+    return ""
+
+
+def _crew_task_output_text(crew_result, task_index: int) -> str:
+    """Fallback: extract output from CrewOutput.tasks_output."""
+    if crew_result is None:
+        return ""
+
+    tasks_output = getattr(crew_result, "tasks_output", None)
+
+    if not tasks_output:
+        return ""
+
+    try:
+        if len(tasks_output) <= task_index:
+            return ""
+
+        output = tasks_output[task_index]
+
+        raw = getattr(output, "raw", None)
+
+        if raw is not None:
+            text = str(raw).strip()
+            if text:
+                return text
+
+        text = str(output).strip()
+
+        if text and text.lower() not in {"none", "null"}:
+            return text
+
     except Exception:
         pass
 
@@ -69,16 +101,18 @@ def run_swarm(
             model=model,
         )
 
-    # ------------------------------------------------------------------
-    # Agents
-    # ------------------------------------------------------------------
+    # ---------------------------------------------------------
+    # Build agents
+    # ---------------------------------------------------------
+
     auditor = build_auditor(llm)
     refactorer = build_refactorer(llm)
     verifier = build_verifier(llm)
 
-    # ------------------------------------------------------------------
-    # Tasks
-    # ------------------------------------------------------------------
+    # ---------------------------------------------------------
+    # Build tasks
+    # ---------------------------------------------------------
+
     t_audit = build_audit_task(
         auditor,
         code,
@@ -98,17 +132,27 @@ def run_swarm(
         language,
     )
 
-    # ------------------------------------------------------------------
+    # ---------------------------------------------------------
     # Progress callbacks
-    # ------------------------------------------------------------------
-    if on_step:
-        t_audit.callback = lambda _output: on_step("Auditor finished")
-        t_refactor.callback = lambda _output: on_step("Refactorer finished")
-        t_verify.callback = lambda _output: on_step("Verifier finished")
+    # ---------------------------------------------------------
 
-    # ------------------------------------------------------------------
-    # Sequential Crew
-    # ------------------------------------------------------------------
+    if on_step:
+        t_audit.callback = lambda _output: on_step(
+            "Auditor finished"
+        )
+
+        t_refactor.callback = lambda _output: on_step(
+            "Refactorer finished"
+        )
+
+        t_verify.callback = lambda _output: on_step(
+            "Verifier finished"
+        )
+
+    # ---------------------------------------------------------
+    # Create sequential crew
+    # ---------------------------------------------------------
+
     crew = Crew(
         agents=[
             auditor,
@@ -124,28 +168,61 @@ def run_swarm(
         verbose=False,
     )
 
-    # Run all three agents
-    crew.kickoff()
+    # ---------------------------------------------------------
+    # Run swarm
+    # ---------------------------------------------------------
 
-    # ------------------------------------------------------------------
-    # Safely collect outputs
-    # ------------------------------------------------------------------
+    crew_result = crew.kickoff()
+
+    # ---------------------------------------------------------
+    # Extract individual task outputs
+    # ---------------------------------------------------------
+
     audit_output = _task_output_text(t_audit)
+
     refactor_output = _task_output_text(t_refactor)
+
     verification_output = _task_output_text(t_verify)
 
-    # ------------------------------------------------------------------
-    # Defensive verifier check
-    # ------------------------------------------------------------------
+    # ---------------------------------------------------------
+    # Fallback to CrewOutput.tasks_output
+    # ---------------------------------------------------------
+
+    if not audit_output:
+        audit_output = _crew_task_output_text(
+            crew_result,
+            0,
+        )
+
+    if not refactor_output:
+        refactor_output = _crew_task_output_text(
+            crew_result,
+            1,
+        )
+
+    if not verification_output:
+        verification_output = _crew_task_output_text(
+            crew_result,
+            2,
+        )
+
+    # ---------------------------------------------------------
+    # Final verification fallback
+    # ---------------------------------------------------------
+
     if not verification_output:
         verification_output = (
             "VERDICT: FAIL\n\n"
             "## Verification Error\n\n"
-            "The Verifier agent completed without returning a readable "
-            "verification report. The refactored code must not be considered "
-            "verified or production-ready until the Verifier returns a "
-            "non-empty report."
+            "The Verifier agent did not return a readable "
+            "verification report. The refactored code must not "
+            "be considered verified or production-ready until "
+            "the Verifier returns a non-empty report."
         )
+
+    # ---------------------------------------------------------
+    # Return results
+    # ---------------------------------------------------------
 
     return SwarmResult(
         audit=audit_output,
