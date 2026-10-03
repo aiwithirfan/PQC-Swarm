@@ -238,7 +238,7 @@ Core Components:
 ​requirements.txt: Contains the project's Python dependencies.
 ​⚙️ Installation
 ​1. Clone the Repository
-git clone [https://github.com/YOUR-USERNAME/PQC-Swarm.git](https://github.com/YOUR-USERNAME/PQC-Swarm.git)
+git clone (https://github.com/YOUR-USERNAME/PQC-Swarm.git)
 cd PQC-Swarm
 2. Create a Virtual Environment
 python -m venv venv
